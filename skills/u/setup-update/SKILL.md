@@ -96,13 +96,16 @@ fi
 
 **CRITICAL: Do NOT proceed without user confirmation.**
 
-Parse the `git diff --name-status` output into module groups. Group by top-level directory or logical unit:
+Parse the `git diff --name-status` output into module groups. Group by top-level directory or logical unit.
 
-| Prefix | Module |
-|--------|--------|
-| `skills/` | Skills — group by individual skill dir |
-| `extensions/` | Extensions — group by individual extension dir |
-| `agents/` | Agents — group by individual agent file |
+**Path prefix note:** pi-setup diff paths include `agent/` prefix (e.g. `agent/extensions/foo.ts`).
+When grouping, use the full diff path as the `{selected_path}` for Step 4 checkout — do NOT strip the `agent/` prefix.
+
+| Diff path pattern | Module label |
+|-------------------|-------------|
+| `agent/skills/` or `skills/` | Skills — group by individual skill dir |
+| `agent/extensions/` or `extensions/` | Extensions — group by individual extension dir |
+| `agent/agents/` or `agents/` | Agents — group by individual agent file |
 | `settings.json`, `pi-websearch.json`, `auth.json`, `trust.json`, etc. | ⚠️ 配置文件（需手动合并，不可直接覆盖） |
 | Other | Other — list individually |
 
@@ -114,10 +117,9 @@ For each module, show:
 
 ```
 A) 全部合并 (不含配置文件)
-B) skills/xxx — <description>
-C) skills/yyy — <description>
-D) extensions/zzz — <description>
-... (one option per module)
+B) agent/extensions/foo/ — <description>
+C) skills/bar/ — <description>
+... (one option per module, using full diff path)
 ⚠️  配置文件单独处理 — 每项手动确认是否合并
 ```
 
@@ -135,9 +137,23 @@ For each selected module in each repo, checkout from upstream:
 cd {repo}
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-# For each selected path:
+# For each selected path (use the full diff path, e.g. agent/extensions/foo/):
 git checkout upstream/$BRANCH -- {selected_path}
-echo "✅ merged: {selected_path}"
+if [ $? -eq 0 ]; then
+  echo "✅ merged: {selected_path}"
+else
+  echo "❌ merge failed: {selected_path}" >&2
+  exit 1
+fi
+```
+
+After all checkouts, verify:
+
+```bash
+cd {repo}
+git status --short
+echo "---"
+echo "以上为本次合并引入的变更，确认无误后继续。"
 ```
 
 **Protected config files** — if user approved a config file merge:
@@ -196,8 +212,17 @@ done
 **agent-setup sync:**
 
 ```bash
-rm -rf "{RUNTIME}/skills"
-cp -r "{AGENT_SETUP}/skills" "{RUNTIME}/skills" && echo "✅ 同步 skills"
+set -euo pipefail
+SRC="{AGENT_SETUP}/skills"
+DST="{RUNTIME}/skills"
+
+if [ ! -d "$SRC" ]; then
+  echo "❌ 源目录不存在: $SRC — 终止同步" >&2
+  exit 1
+fi
+
+rm -rf "$DST"
+cp -r "$SRC" "$DST" && echo "✅ 同步 skills"
 ```
 
 ---
