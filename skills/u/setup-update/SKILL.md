@@ -163,7 +163,7 @@ For each selected module in each repo, merge from upstream.
 |--------|---------|---------|
 | `A` | New in upstream | `git checkout upstream/$BRANCH -- {path}` |
 | `M` | Modified in upstream | `git checkout upstream/$BRANCH -- {path}` |
-| `D` | Deleted in upstream | `git rm -- {path}` |
+| `D` | Deleted in upstream | `git rm -r -- {path}` |
 
 ```bash
 cd {repo}
@@ -172,7 +172,7 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 # For {status, path} pairs:
 case "{status}" in
   D)
-    git rm -- "{path}" && echo "✅ merged (deleted): {path}" || { echo "❌ merge failed: {path}" >&2; exit 1; }
+    git rm -r -- "{path}" && echo "✅ merged (deleted): {path}" || { echo "❌ merge failed: {path}" >&2; exit 1; }
     ;;
   *)
     git checkout upstream/$BRANCH -- "{path}" && echo "✅ merged: {path}" || { echo "❌ merge failed: {path}" >&2; exit 1; }
