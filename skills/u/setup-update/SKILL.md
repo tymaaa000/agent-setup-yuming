@@ -16,11 +16,14 @@ Two modes:
 > Note: `{VAR}` below are substitution placeholders — replace with actual paths before running.
 
 This skill file is at `{PI_HOME}/.pi/agent/skills/u/setup-update/SKILL.md`.
-Derive `PI_HOME` by going up 4 levels from this file's directory.
+Derive `PI_HOME` by going up 5 levels from this file's directory:
+`skills/u/setup-update/` → `skills/u/` → `skills/` → `.pi/agent/` → `.pi/` → `PI_HOME`
+
+**⚠️ Before any destructive operation (rm, cp -r), verify each path starts with the expected prefix (e.g. `D:\Program Files\piagent\.pi\agent`) to prevent catastrophic misconfiguration.**
 
 | Variable | Value |
 |----------|-------|
-| `PI_HOME` | derived from skill location |
+| `PI_HOME` | derived from skill location (5 levels up from SKILL.md) |
 | `PI_SETUP` | `{PI_HOME}/pi-setup` |
 | `AGENT_SETUP` | `{PI_HOME}/agent-setup` |
 | `RUNTIME` | `{PI_HOME}/.pi/agent` |
@@ -108,30 +111,48 @@ Sync files from repos to `{RUNTIME}`.
 **pi-setup sync — copy all except protected:**
 
 ```bash
+set -euo pipefail
 SRC="{PI_SETUP}/agent"
 DST="{RUNTIME}"
 
-# Protected files — never overwrite in DST
-PROTECTED="settings.json pi-websearch.json auth.json trust.json models-store.json"
+# Guard: SRC must exist
+if [ ! -d "$SRC" ]; then
+  echo "❌ 源目录不存在: $SRC — 终止同步" >&2
+  exit 1
+fi
 
-# Copy each top-level item from SRC to DST, skipping protected
+# Protected items — NEVER overwrite or delete in DST.
+# - Files: user configs that must not be overwritten by upstream
+# - Dirs: runtime data that would be LOST if overwritten or deleted
+#   (git/ and npm/ exist in BOTH SRC and DST, but SRC has only .gitignore;
+#    DST has cloned repos and installed packages — overwriting = destruction)
+PROTECTED="settings.json pi-websearch.json auth.json trust.json models-store.json sessions bin git npm searxng-instances"
+
+shopt -s nullglob  # prevent "$SRC/*" from becoming literal "*" if SRC is empty
+
 for item in "$SRC"/*; do
   name=$(basename "$item")
-  if echo "$PROTECTED" | grep -qw "$name"; then
+
+  # Safety: reject empty or glob-literal names (must never happen with nullglob, but guard anyway)
+  if [ -z "$name" ] || [ "$name" = "*" ]; then
+    echo "⚠ 跳过异常条目: $item" >&2
+    continue
+  fi
+
+  # Exact match against space-delimited PROTECTED list (NOT grep -w — that would falsely match "searxng" inside "searxng-instances")
+  if echo " $PROTECTED " | grep -q " $name "; then
     echo "⏭️ 跳过受保护: $name"
   else
+    # Safety: reject names that could escape DST
+    case "$name" in .|..|*/*) echo "⚠ 拒绝危险路径: $name" >&2; continue ;; esac
     rm -rf "$DST/$name" 2>/dev/null
     cp -r "$item" "$DST/$name" && echo "✅ 同步: $name"
   fi
 done
 
-# Cleanup: remove items in DST that no longer exist in SRC (only for non-protected)
-for item in "$DST"/*; do
-  name=$(basename "$item")
-  if ! echo "$PROTECTED" | grep -qw "$name" && [ ! -e "$SRC/$name" ]; then
-    rm -rf "$item" && echo "🗑️ 清理: $name (源已删除)"
-  fi
-done
+# ⛔ NEVER add a "cleanup" loop here (remove DST items not in SRC).
+# RUNTIME contains auto-generated dirs (sessions/, bin/, git/, npm/, searxng-instances/)
+# that DO NOT exist in pi-setup/agent/. Deleting them CORRUPTS the running pi session.
 ```
 
 **agent-setup sync:**
@@ -156,10 +177,15 @@ echo "=== 运行时目录 ==="
 echo "extensions: $(ls {RUNTIME}/extensions/ 2>/dev/null | wc -l) 个文件"
 echo "agents:     $(ls {RUNTIME}/agents/ 2>/dev/null | wc -l) 个文件"
 echo "skills/u:   $(ls {RUNTIME}/skills/u/ 2>/dev/null | wc -l) 个目录"
-echo "=== 受保护文件未丢失 ==="
+echo "=== 受保护项完整性检查 ==="
 for f in settings.json pi-websearch.json auth.json; do
   [ -f "{RUNTIME}/$f" ] && echo "✅ $f" || echo "❌ $f 缺失"
 done
+for d in sessions bin git npm; do
+  [ -d "{RUNTIME}/$d" ] && echo "✅ $d/" || echo "❌ $d/ 缺失(危险!)"
+done
+echo "=== git repos ==="
+ls {RUNTIME}/git/github.com/ 2>/dev/null || echo "(无)"
 ```
 
 ### Step L7: Report
