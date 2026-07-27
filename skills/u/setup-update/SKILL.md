@@ -28,6 +28,30 @@ Remotes: `origin` = user's personal repo, `upstream` = aqua2k1 original.
 
 ---
 
+## Step 0: Pre-Check — Clean Working Tree
+
+**CRITICAL: Stop if working tree is dirty.** Merge can silently overwrite local changes.
+
+```bash
+cd {PI_SETUP}
+if [ -n "$(git status --porcelain)" ]; then
+  echo "❌ pi-setup 工作区不干净，请先提交或暂存本地修改:" >&2
+  git status --short
+  exit 1
+fi
+
+cd {AGENT_SETUP}
+if [ -n "$(git status --porcelain)" ]; then
+  echo "❌ agent-setup 工作区不干净，请先提交或暂存本地修改:" >&2
+  git status --short
+  exit 1
+fi
+
+echo "✅ 工作区干净"
+```
+
+---
+
 ## Step 1: Pull Origin + Fetch Upstream
 
 ```bash
@@ -53,7 +77,7 @@ For each repo, show what upstream has that origin doesn't, grouped by module.
 cd {PI_SETUP}
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo "=== pi-setup ==="
-echo "本地: $(git rev-parse --short HEAD)  origin: $(git rev-parse --short origin/$BRANCH)  upstream: $(git rev-parse --short upstream/$BRANCH)"
+echo "本地: $(git rev-parse --short HEAD)  origin: $(git rev-parse --short origin/$BRANCH)  upstream: $(git rev-parse --short upstream/$BRANCH 2>/dev/null || echo N/A)"
 echo ""
 UPSTREAM_COMMITS=$(git log --oneline origin/$BRANCH..upstream/$BRANCH 2>/dev/null)
 if [ -z "$UPSTREAM_COMMITS" ]; then
@@ -74,7 +98,7 @@ cd {AGENT_SETUP}
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo ""
 echo "=== agent-setup ==="
-echo "本地: $(git rev-parse --short HEAD)  origin: $(git rev-parse --short origin/$BRANCH)  upstream: $(git rev-parse --short upstream/$BRANCH)"
+echo "本地: $(git rev-parse --short HEAD)  origin: $(git rev-parse --short origin/$BRANCH)  upstream: $(git rev-parse --short upstream/$BRANCH 2>/dev/null || echo N/A)"
 echo ""
 UPSTREAM_COMMITS=$(git log --oneline origin/$BRANCH..upstream/$BRANCH 2>/dev/null)
 if [ -z "$UPSTREAM_COMMITS" ]; then
