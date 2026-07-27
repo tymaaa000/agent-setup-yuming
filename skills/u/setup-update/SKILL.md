@@ -1,15 +1,11 @@
 ---
 name: setup-update
-description: "Manage pi setup repos — pull upstream updates or push local changes to forks. Use when user says setup-update, 检查更新, 推送更新, sync setup. Two modes — local (pull upstream to sync runtime) and origin (push local to fork)."
+description: "Manage pi setup repos — review upstream changes by module, merge selectively, test locally, then push to origin. Use when user says setup-update, 检查更新, 推送更新, sync setup."
 ---
 
 # Setup Update
 
-Two modes:
-- `local` — pull upstream updates, sync to runtime
-- `origin` — push local changes to GitHub forks
-
-**If user does not specify mode, ask: "选模式: local 还是 origin？" and wait for answer.**
+Review upstream changes → select modules → merge → test → push to origin.
 
 ## Path Resolution
 
@@ -28,17 +24,11 @@ Derive `PI_HOME` by going up 5 levels from this file's directory:
 | `AGENT_SETUP` | `{PI_HOME}/agent-setup` |
 | `RUNTIME` | `{PI_HOME}/.pi/agent` |
 
-Remotes per repo: `origin` = user's fork, `upstream` = aqua2k1 original.
+Remotes: `origin` = user's personal repo, `upstream` = aqua2k1 original.
 
 ---
 
-## MODE: local
-
-Pull upstream updates → sync to runtime.
-
-### Step L1: Pull Fork First
-
-For each repo, detect branch and pull:
+## Step 1: Pull Origin + Fetch Upstream
 
 ```bash
 cd {PI_SETUP}
@@ -48,65 +38,118 @@ cd {AGENT_SETUP}
 BRANCH=$(git rev-parse --abbrev-ref HEAD) && git pull origin $BRANCH || echo "⚠ agent-setup pull 失败"
 ```
 
-### Step L2: Fetch and Compare
-
 ```bash
 cd {PI_SETUP} && git fetch upstream 2>/dev/null || echo "⚠ pi-setup upstream 不可达"
 cd {AGENT_SETUP} && git fetch upstream 2>/dev/null || echo "⚠ agent-setup upstream 不可达"
 ```
 
-For each repo, run separately (BRANCH may differ):
+---
+
+## Step 2: Show Upstream Changes by Module
+
+For each repo, show what upstream has that origin doesn't, grouped by module.
 
 ```bash
 cd {PI_SETUP}
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
-echo "pi-setup: 本地=$(git rev-parse --short HEAD) fork=$(git rev-parse --short origin/$BRANCH) 上游=$(git rev-parse --short upstream/$BRANCH 2>/dev/null || echo N/A)"
-echo "新提交:" && git log --oneline origin/$BRANCH..upstream/$BRANCH 2>/dev/null || echo "(无)"
-
-cd {AGENT_SETUP}
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-echo "agent-setup: 本地=$(git rev-parse --short HEAD) fork=$(git rev-parse --short origin/$BRANCH) 上游=$(git rev-parse --short upstream/$BRANCH 2>/dev/null || echo N/A)"
-echo "新提交:" && git log --oneline origin/$BRANCH..upstream/$BRANCH 2>/dev/null || echo "(无)"
+echo "=== pi-setup ==="
+echo "本地: $(git rev-parse --short HEAD)  origin: $(git rev-parse --short origin/$BRANCH)  upstream: $(git rev-parse --short upstream/$BRANCH)"
+echo ""
+UPSTREAM_COMMITS=$(git log --oneline origin/$BRANCH..upstream/$BRANCH 2>/dev/null)
+if [ -z "$UPSTREAM_COMMITS" ]; then
+  echo "✅ 已是最新，无上游更新"
+else
+  echo "--- 上游新提交 ---"
+  echo "$UPSTREAM_COMMITS"
+  echo ""
+  echo "--- 按模块分组变更 ---"
+  git diff --name-status origin/$BRANCH..upstream/$BRANCH | while read status file; do
+    echo "$status  $file"
+  done
+fi
 ```
 
-### Step L3: Report — STOP HERE
+```bash
+cd {AGENT_SETUP}
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+echo ""
+echo "=== agent-setup ==="
+echo "本地: $(git rev-parse --short HEAD)  origin: $(git rev-parse --short origin/$BRANCH)  upstream: $(git rev-parse --short upstream/$BRANCH)"
+echo ""
+UPSTREAM_COMMITS=$(git log --oneline origin/$BRANCH..upstream/$BRANCH 2>/dev/null)
+if [ -z "$UPSTREAM_COMMITS" ]; then
+  echo "✅ 已是最新，无上游更新"
+else
+  echo "--- 上游新提交 ---"
+  echo "$UPSTREAM_COMMITS"
+  echo ""
+  echo "--- 按模块分组变更 ---"
+  git diff --name-status origin/$BRANCH..upstream/$BRANCH | while read status file; do
+    echo "$status  $file"
+  done
+fi
+```
+
+---
+
+## Step 3: Group and Report — STOP HERE
 
 **CRITICAL: Do NOT proceed without user confirmation.**
 
-Show which repos have upstream updates, every new commit, and changed files (+/-).
+Parse the `git diff --name-status` output into module groups. Group by top-level directory or logical unit:
 
-**Q1: 是否合并上游更新？**
+| Prefix | Module |
+|--------|--------|
+| `skills/` | Skills — group by individual skill dir |
+| `extensions/` | Extensions — group by individual extension dir |
+| `agents/` | Agents — group by individual agent file |
+| `settings.json`, `pi-websearch.json`, `auth.json`, `trust.json`, etc. | ⚠️ 配置文件（需手动合并，不可直接覆盖） |
+| Other | Other — list individually |
 
-Dynamic:
-- Both → `A) 全部合并  B) 仅 pi-setup  C) 仅 agent-setup  D) 都不合并`
-- One repo → `A) 合并  B) 不合并`
-- Neither → "已是最新" and STOP
+For each module, show:
+- Whether it's new (`A`), modified (`M`), or deleted (`D`)
+- Brief description (for SKILL.md, extract `description` from frontmatter)
 
-**Q2: 合并后是否同步到运行时？**
+**Multiple-choice options:**
 
 ```
-2. 合并后是否同步到运行时？
-   A) 是
-   B) 否
+A) 全部合并 (不含配置文件)
+B) skills/xxx — <description>
+C) skills/yyy — <description>
+D) extensions/zzz — <description>
+... (one option per module)
+⚠️  配置文件单独处理 — 每项手动确认是否合并
 ```
 
-> 💡 空格分隔回答，如 `A A`。跳过用 `-`。
+> 💡 多选用逗号分隔，如 `B,D`。选 `A` 则忽略其他。
 
-Parse: split by spaces, map by position. If more/less answers than questions, ask to retry.
+If neither repo has upstream changes → "已是最新" and STOP.
 
-### Step L4: Merge Upstream
+---
 
-For each approved repo:
+## Step 4: Merge Selected Modules
+
+For each selected module in each repo, checkout from upstream:
 
 ```bash
-cd {repo_path}
+cd {repo}
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
-git merge upstream/$BRANCH || { echo "❌ 合并冲突，请手动解决后重新运行"; exit 1; }
+
+# For each selected path:
+git checkout upstream/$BRANCH -- {selected_path}
+echo "✅ merged: {selected_path}"
 ```
 
-### Step L5: Sync to Runtime
+**Protected config files** — if user approved a config file merge:
+- Show diff first: `git diff upstream/$BRANCH -- settings.json`
+- Ask again to confirm before overwriting
+- After checkout, note: "⚠️ 请手动检查并合并你的本地配置"
 
-Sync files from repos to `{RUNTIME}`.
+---
+
+## Step 5: Sync to Runtime
+
+After all selected modules are merged, sync to runtime.
 
 **pi-setup sync — copy all except protected:**
 
@@ -124,26 +167,21 @@ fi
 # Protected items — NEVER overwrite or delete in DST.
 # - Files: user configs that must not be overwritten by upstream
 # - Dirs: runtime data that would be LOST if overwritten or deleted
-#   (git/ and npm/ exist in BOTH SRC and DST, but SRC has only .gitignore;
-#    DST has cloned repos and installed packages — overwriting = destruction)
 PROTECTED="settings.json pi-websearch.json auth.json trust.json models-store.json sessions bin git npm searxng-instances"
 
-shopt -s nullglob  # prevent "$SRC/*" from becoming literal "*" if SRC is empty
+shopt -s nullglob
 
 for item in "$SRC"/*; do
   name=$(basename "$item")
 
-  # Safety: reject empty or glob-literal names (must never happen with nullglob, but guard anyway)
   if [ -z "$name" ] || [ "$name" = "*" ]; then
     echo "⚠ 跳过异常条目: $item" >&2
     continue
   fi
 
-  # Exact match against space-delimited PROTECTED list (NOT grep -w — that would falsely match "searxng" inside "searxng-instances")
   if echo " $PROTECTED " | grep -q " $name "; then
     echo "⏭️ 跳过受保护: $name"
   else
-    # Safety: reject names that could escape DST
     case "$name" in .|..|*/*) echo "⚠ 拒绝危险路径: $name" >&2; continue ;; esac
     rm -rf "$DST/$name" 2>/dev/null
     cp -r "$item" "$DST/$name" && echo "✅ 同步: $name"
@@ -162,106 +200,44 @@ rm -rf "{RUNTIME}/skills"
 cp -r "{AGENT_SETUP}/skills" "{RUNTIME}/skills" && echo "✅ 同步 skills"
 ```
 
-**settings.json comparison:**
+---
 
-Compare `{PI_SETUP}/agent/settings.json` (new) vs `{RUNTIME}/settings.json` (current).
-If they differ, show the diff and ask: "上游 settings.json 有变化，是否合并？A) 合并  B) 跳过"
+## Step 6: Test — STOP HERE
 
-### Step L6: Verify
+**CRITICAL: Do NOT commit or push yet.**
 
-```bash
-echo "=== Git 状态 ==="
-cd {PI_SETUP} && echo "pi-setup: $(git rev-parse --short HEAD)"
-cd {AGENT_SETUP} && echo "agent-setup: $(git rev-parse --short HEAD)"
-echo "=== 运行时目录 ==="
-echo "extensions: $(ls {RUNTIME}/extensions/ 2>/dev/null | wc -l) 个文件"
-echo "agents:     $(ls {RUNTIME}/agents/ 2>/dev/null | wc -l) 个文件"
-echo "skills/u:   $(ls {RUNTIME}/skills/u/ 2>/dev/null | wc -l) 个目录"
-echo "=== 受保护项完整性检查 ==="
-for f in settings.json pi-websearch.json auth.json; do
-  [ -f "{RUNTIME}/$f" ] && echo "✅ $f" || echo "❌ $f 缺失"
-done
-for d in sessions bin git npm; do
-  [ -d "{RUNTIME}/$d" ] && echo "✅ $d/" || echo "❌ $d/ 缺失(危险!)"
-done
-echo "=== git repos ==="
-ls {RUNTIME}/git/github.com/ 2>/dev/null || echo "(无)"
+Tell user:
+
+```
+✅ 已合并并同步到运行时。请手动测试以下模块是否正常工作：
+  - <list merged modules>
+
+测试通过后回复 "OK" 或 "没问题"，我将生成提交信息并推送到 origin。
+测试不通过回复 "回滚"，我将撤销所有改动。
 ```
 
-### Step L7: Report
-
-Summarize merged/synced/skipped. Tell user to restart pi.
+Wait for user confirmation.
 
 ---
 
-## MODE: origin
+## Step 7: Commit and Push
 
-Push local changes to GitHub forks.
+After user confirms tests pass, auto-generate commit message and push.
 
-### Step O1: Check Local Changes
+**Generate commit message:**
 
-```bash
-cd {PI_SETUP}
-echo "=== pi-setup ==="
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-git status --short || echo "❌ git status 失败"
-echo "--- 未推送提交 ---"
-UNPUSHED=$(git log --oneline origin/$BRANCH..HEAD 2>/dev/null)
-if [ -n "$UNPUSHED" ]; then
-  echo "$UNPUSHED"
-  echo "(以上提交已在本地但未推送到 fork)"
-fi
+Format: `merge: upstream updates ({module_list})`
 
-cd {AGENT_SETUP}
-echo "=== agent-setup ==="
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-git status --short || echo "❌ git status 失败"
-echo "--- 未推送提交 ---"
-UNPUSHED=$(git log --oneline origin/$BRANCH..HEAD 2>/dev/null)
-if [ -n "$UNPUSHED" ]; then
-  echo "$UNPUSHED"
-  echo "(以上提交已在本地但未推送到 fork)"
-fi
-```
-
-### Step O2: Report — STOP HERE
-
-**CRITICAL: Do NOT proceed without user confirmation.**
-
-**Q1: 上传哪些文件？**
-
-List EVERY changed file with function summary:
-- SKILL.md → extract `description` from frontmatter
-- Other files → extract first comment/header line as summary
-- Format: `B) [repo] file/path — 功能描述`
-- >10 files → fold into groups like `B) [repo] dir/ (3 files) — 目录说明`
-- First option always `A) 全部`
-
-Zero changes → "无改动" and STOP.
-
-**Q2: 提交信息用什么？**
-
-```
-2. 提交信息用什么？
-   A) [自动生成: feat(xxx): xxx]
-   B) 自定义
-```
-
-回答即确认提交+推送。
-
-> 💡 多选用逗号分隔（如 `B,C`），题间用空格（如 `B,C A`）。跳过用 `-`。
-
-Parse: split by spaces. Q1 split by comma → file selection. Q2 single letter. If count ≠ 2, ask to retry.
-
-### Step O3: Stage and Commit
+Where `{module_list}` is a comma-separated summary of merged modules, e.g.:
+- `merge: upstream updates (skills: setup-update, grill-me)`
+- `merge: upstream updates (extensions: my-extension, agents: my-agent)`
+- `merge: upstream updates (skills: foo, extensions: bar)`
 
 ```bash
 cd {repo}
-git add {user-selected files}
-git commit -m "{message}" || { echo "❌ 提交失败"; exit 1; }
+git add {selected_paths}
+git commit -m "{generated_message}" || { echo "❌ 提交失败"; exit 1; }
 ```
-
-### Step O4: Push
 
 ```bash
 cd {repo}
@@ -269,16 +245,34 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 git push origin $BRANCH || { echo "❌ 推送失败，检查网络或权限"; exit 1; }
 ```
 
-### Step O5: Verify
+---
+
+## Step 8: Verify and Report
+
+```bash
+cd {PI_SETUP} && echo "pi-setup: $(git rev-parse --short HEAD) (origin: $(git ls-remote origin $(git rev-parse --abbrev-ref HEAD) | cut -c1-7))"
+cd {AGENT_SETUP} && echo "agent-setup: $(git rev-parse --short HEAD) (origin: $(git ls-remote origin $(git rev-parse --abbrev-ref HEAD) | cut -c1-7))"
+```
+
+**Summary:**
+
+| Item | Action |
+|------|--------|
+| Modules merged | list |
+| Pushed to origin | commit hash |
+| Protected (skipped) | list |
+
+Tell user to restart pi if runtime was synced.
+
+---
+
+## Rollback
+
+If user says "回滚" at any point before pushing:
 
 ```bash
 cd {repo}
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
-LOCAL=$(git rev-parse --short HEAD)
-REMOTE=$(git ls-remote origin $BRANCH | cut -c1-7)
-[ "$LOCAL" = "$REMOTE" ] && echo "✅ 推送成功 $LOCAL" || echo "⚠ 本地 $LOCAL ≠ 远程 $REMOTE"
+git reset --hard HEAD
+git clean -fd
+echo "✅ 已回滚到: $(git rev-parse --short HEAD)"
 ```
-
-### Step O6: Report
-
-Summarize what was pushed. Remind: to contribute to upstream, open a Pull Request on GitHub.
