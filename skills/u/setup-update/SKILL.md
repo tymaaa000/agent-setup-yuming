@@ -131,20 +131,29 @@ If neither repo has upstream changes → "已是最新" and STOP.
 
 ## Step 4: Merge Selected Modules
 
-For each selected module in each repo, checkout from upstream:
+For each selected module in each repo, merge from upstream.
+
+**CRITICAL: Handle by diff status, NOT uniform `git checkout`:**
+
+| Status | Meaning | Command |
+|--------|---------|---------|
+| `A` | New in upstream | `git checkout upstream/$BRANCH -- {path}` |
+| `M` | Modified in upstream | `git checkout upstream/$BRANCH -- {path}` |
+| `D` | Deleted in upstream | `git rm -- {path}` |
 
 ```bash
 cd {repo}
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-# For each selected path (use the full diff path, e.g. agent/extensions/foo/):
-git checkout upstream/$BRANCH -- {selected_path}
-if [ $? -eq 0 ]; then
-  echo "✅ merged: {selected_path}"
-else
-  echo "❌ merge failed: {selected_path}" >&2
-  exit 1
-fi
+# For {status, path} pairs:
+case "{status}" in
+  D)
+    git rm -- "{path}" && echo "✅ merged (deleted): {path}" || { echo "❌ merge failed: {path}" >&2; exit 1; }
+    ;;
+  *)
+    git checkout upstream/$BRANCH -- "{path}" && echo "✅ merged: {path}" || { echo "❌ merge failed: {path}" >&2; exit 1; }
+    ;;
+esac
 ```
 
 After all checkouts, verify:
@@ -183,7 +192,7 @@ fi
 # Protected items — NEVER overwrite or delete in DST.
 # - Files: user configs that must not be overwritten by upstream
 # - Dirs: runtime data that would be LOST if overwritten or deleted
-PROTECTED="settings.json pi-websearch.json auth.json trust.json models-store.json sessions bin git npm searxng-instances"
+PROTECTED="settings.json pi-websearch.json auth.json trust.json models-store.json sessions bin git npm skills searxng-instances"
 
 shopt -s nullglob
 
@@ -301,3 +310,7 @@ git reset --hard HEAD
 git clean -fd
 echo "✅ 已回滚到: $(git rev-parse --short HEAD)"
 ```
+
+**After rollback, re-sync runtime from repos** (reverse Step 5) to undo the runtime sync:
+
+- Re-run Step 5 (Sync to Runtime) to restore runtime to match the rolled-back repos.
