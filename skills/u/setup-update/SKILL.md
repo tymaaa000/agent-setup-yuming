@@ -238,53 +238,121 @@ Do NOT run a separate bash script — use the values already printed by the Step
 
 ---
 
-## Step 3: Group and Report — STOP HERE
+## Step 3: Group, Classify, and Report — STOP HERE
 
 **CRITICAL: Do NOT proceed without user confirmation.**
 
-Parse the `git diff --name-status` output into module groups. Group by top-level directory or logical unit.
+### 3a: Classify all changed files
+
+Parse the `git diff --name-status` output. Classify each file into two categories:
+
+| 类别 | 包含 | 处理方式 |
+|------|------|----------|
+| **模块文件** | extensions/, agents/, prompts/, skills/, APPEND_SYSTEM.md, searxng.sh, other non-config | Step 4: `git checkout upstream` |
+| **配置文件** | settings.json, pi-websearch.json, auth.json, trust.json, models-store.json, models.json, pi-lsp.json, subagent-model.json, pi-chrome-devtools.json | Step 4.5: 字段级合并 |
 
 **Path prefix note:** pi-setup diff paths include `agent/` prefix (e.g. `agent/extensions/foo.ts`).
 When grouping, use the full diff path as the `{selected_path}` for Step 4 checkout — do NOT strip the `agent/` prefix.
 
-| Diff path pattern | Module label |
-|-------------------|-------------|
-| `agent/skills/` or `skills/` | Skills — group by individual skill dir |
-| `agent/extensions/` or `extensions/` | Extensions — group by individual extension dir |
-| `agent/agents/` or `agents/` | Agents — group by individual agent file |
-| `agent/prompts/` or `prompts/` | Prompts — group by individual prompt file |
-| `agent/settings.json` | ⚠️ 配置文件 — 需分析 `packages` 字段 diff（见下方 packages 检查） |
-| `agent/pi-websearch.json`, `agent/auth.json`, `agent/trust.json`, `agent/models-store.json`, `agent/pi-lsp.json`, etc. | ⚠️ 配置文件（需手动合并，不可直接覆盖） |
-| Other | Other — list individually |
+Group module files by top-level directory for individual selection.
 
-### settings.json `packages` 字段检查
+### 3b: Config file field-level analysis
 
-当 `agent/settings.json` 出现在 diff 中时，必须提取上游和本地的 `packages` 字段进行对比：
+For each config file in the diff, run a field-level comparison:
+
+**settings.json — extract and compare key fields:**
 
 ```bash
 cd "{PI_SETUP}"
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
-# Extract packages array from upstream and local versions
-UPSTREAM_PKGS=$(git show upstream/$BRANCH:agent/settings.json 2>/dev/null | jq -r '.packages[]? // empty' 2>/dev/null || echo "")
-LOCAL_PKGS=$(git show origin/$BRANCH:agent/settings.json 2>/dev/null | jq -r '.packages[]? // empty' 2>/dev/null || echo "")
+UPSTREAM_SETTINGS=$(git show upstream/$BRANCH:agent/settings.json 2>/dev/null)
+LOCAL_SETTINGS=$(git show origin/$BRANCH:agent/settings.json 2>/dev/null)
 
-# Show packages only present in upstream (new recommendations)
-NEW_PKGS=$(comm -23 <(echo "$UPSTREAM_PKGS" | sort) <(echo "$LOCAL_PKGS" | sort) 2>/dev/null)
-if [ -n "$NEW_PKGS" ]; then
-  echo "--- 🔔 上游推荐的 npm 新包（本地未安装） ---"
-  echo "$NEW_PKGS"
-fi
+echo "=== settings.json 字段级对比 ==="
 
-# Show packages only local (user's custom additions)
-EXTRA_PKGS=$(comm -13 <(echo "$UPSTREAM_PKGS" | sort) <(echo "$LOCAL_PKGS" | sort) 2>/dev/null)
-if [ -n "$EXTRA_PKGS" ]; then
-  echo "--- 💡 本地独有的包（上游未包含） ---"
-  echo "$EXTRA_PKGS"
-fi
+python3 -c "
+import json, sys
+up = json.loads(sys.argv[1])
+lo = json.loads(sys.argv[2])
+
+# packages
+up_pkgs = set(up.get('packages', []))
+lo_pkgs = set(lo.get('packages', []))
+new_pkgs = up_pkgs - lo_pkgs
+removed_pkgs = lo_pkgs - up_pkgs
+if new_pkgs: print('🔔 上游新增 packages:'); [print(f'    {p}') for p in sorted(new_pkgs)]
+if removed_pkgs: print('💡 本地独有 packages:'); [print(f'    {p}') for p in sorted(removed_pkgs)]
+if not new_pkgs and not removed_pkgs: print('✅ packages 一致')
+
+# key fields
+for f in ['defaultProvider','defaultModel','defaultThinkingLevel','theme','lastChangelogVersion']:
+    uv, lv = up.get(f,'(无)'), lo.get(f,'(无)')
+    if uv != lv: print(f'⚠️  {f}: 本地={lv} → 上游={uv}')
+
+# enabledModels
+um = up.get('enabledModels',[])
+lm = lo.get('enabledModels',[])
+if um != lm:
+    print(f'⚠️  enabledModels: 内容不同（本地 {len(lm)} 个，上游 {len(um)} 个）')
+    print(f'    上游: {", ".join(um)}')
+    print(f'    本地: {", ".join(lm)}')
+" "$UPSTREAM_SETTINGS" "$LOCAL_SETTINGS" 2>/dev/null
 ```
 
-将推荐新包在用户选项中单独列出（如 `P) 安装上游推荐的 npm 包: <list>`），其他本地独有的包标记为"本地保留"。
+**pi-websearch.json — compare key fields:**
+
+```bash
+cd "{PI_SETUP}"
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+UPSTREAM_WS=$(git show upstream/$BRANCH:agent/pi-websearch.json 2>/dev/null)
+LOCAL_WS=$(git show origin/$BRANCH:agent/pi-websearch.json 2>/dev/null)
+
+python3 -c "
+import json, sys
+def get_nested(d, path):
+    for k in path.split('.'): d = d.get(k,{}) if isinstance(d,dict) else {}; return d
+up, lo = json.loads(sys.argv[1]), json.loads(sys.argv[2])
+for f in ['provider','timeoutMs','searxng.url','searxng.script','defaults.numResults']:
+    uv, lv = get_nested(up,f), get_nested(lo,f)
+    if uv != lv: print(f'⚠️  {f}: 本地={lv} → 上游={uv}')
+" "$UPSTREAM_WS" "$LOCAL_WS" 2>/dev/null
+```
+
+### 3c: Generate selection report
+
+For each **module file**, show:
+- Whether it's new (`A`), modified (`M`), or deleted (`D`)
+- Brief description
+- **Each D-status item gets its own line** (not bundled)
+
+For **config files**, show:
+- Summary of field-level differences from Step 3b
+- Recommended merge strategy
+
+**Report format:**
+
+```
+=== 模块文件 ===
+1) agent/extensions/foo/ (M) — <description>
+2) skills/bar/ (A) — <description>
+3) skills/u/setup-update/ (D) — ⚠️ 删除此技能自身
+
+=== 配置文件 ===
+C1) settings.json:
+     ✅ 合并 packages（新增: npm:xxx）
+     ✅ 合并 lastChangelogVersion
+     ⏭️ 保留本地: defaultProvider, defaultModel, enabledModels 等
+C2) pi-websearch.json: ⏭️ 全部保留本地
+
+=== 选项 ===
+A) 全部模块合并（不含配置文件）
+1,2) 选择特定模块
+C) 合并推荐的配置字段（packages, lastChangelogVersion）
+跳过C) 不合并配置文件
+```
+
+
 
 For each module, show:
 - Whether it's new (`A`), modified (`M`), or deleted (`D`)
@@ -328,9 +396,9 @@ Report which packages were installed and note: "⚠️ npm 包已安装到 RUNTI
 
 ---
 
-## Step 4: Merge Selected Modules
+## Step 4: Merge Selected Module Files
 
-For each selected module in each repo, merge from upstream.
+Only merge **module files** in this step. Config files are handled in Step 4.5.
 
 **Record pre-merge HEAD for precise rollback (only undo the merge, not the pull):**
 
@@ -381,18 +449,114 @@ echo "---"
 echo "以上为本次合并引入的变更，确认无误后继续。"
 ```
 
-**Protected config files** — if user approved a config file merge:
-- Show diff first: `git diff upstream/$BRANCH -- {path}` (use the full diff path from Step 2, including `agent/` prefix if present)
-- Ask again to confirm before overwriting
-- After checkout, note: "⚠️ 请手动检查并合并你的本地配置"
+---
+
+## Step 4.5: Merge Config Files (Field-Level)
+
+**This step is separate from Step 4 because config files need field-level merge, NOT file-level overwrite.**
+
+For each config file the user chose to merge:
+
+### settings.json merge strategy
+
+The goal: **keep all user-customized fields, selectively merge upstream-recommended fields.**
+
+**NEVER-OVERWRITE fields** (user-specific, upstream values are irrelevant):
+- `defaultProvider`, `defaultModel`, `defaultThinkingLevel`
+- `theme`, `externalEditor`, `enableSkillCommands`
+- `enabledModels` (must match user's actual providers in models.json)
+- `terminal`, `treeFilterMode`, `hideThinkingBlock`
+
+**SAFE-TO-MERGE fields** (upstream recommendations):
+- `lastChangelogVersion` — always take upstream's value
+- `packages` — union merge (keep local + add upstream new)
+
+```bash
+cd "{PI_SETUP}"
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+UPSTREAM_SETTINGS=$(git show upstream/$BRANCH:agent/settings.json 2>/dev/null)
+LOCAL_SETTINGS=$(cat "{RUNTIME}/settings.json" 2>/dev/null)
+
+# Start with LOCAL as base
+MERGED="$LOCAL_SETTINGS"
+
+# --- Merge packages (union: keep local + add upstream new) ---
+NEW_PKGS=$(python3 -c "
+import json, sys
+up = set(json.loads(sys.argv[1]).get('packages',[]))
+lo = set(json.loads(sys.argv[2]).get('packages',[]))
+for p in sorted(up - lo): print(p)
+" "$UPSTREAM_SETTINGS" "$LOCAL_SETTINGS" 2>/dev/null)
+
+if [ -n "$NEW_PKGS" ]; then
+  MERGED=$(python3 -c "
+import json, sys
+j = json.loads(sys.argv[1])
+for p in sys.argv[2].strip().split('\n'):
+    p = p.strip()
+    if p and p not in j.get('packages',[]): j.setdefault('packages',[]).append(p)
+print(json.dumps(j))
+" "$MERGED" "$NEW_PKGS" 2>/dev/null)
+  echo "✅ settings.json: 已合并新增 packages"
+fi
+
+# --- Merge lastChangelogVersion (always take upstream's value) ---
+UPSTREAM_VER=$(python3 -c "import json,sys;print(json.loads(sys.argv[1]).get('lastChangelogVersion',''))" "$UPSTREAM_SETTINGS" 2>/dev/null)
+if [ -n "$UPSTREAM_VER" ]; then
+  MERGED=$(python3 -c "
+import json, sys
+j = json.loads(sys.argv[1])
+j['lastChangelogVersion'] = sys.argv[2]
+print(json.dumps(j))
+" "$MERGED" "$UPSTREAM_VER" 2>/dev/null)
+  echo "✅ settings.json: 已更新 lastChangelogVersion → $UPSTREAM_VER"
+fi
+
+# --- All other fields: KEEP LOCAL ---
+echo "⏭️ settings.json: 保留本地自定义字段 (provider, model, theme, enabledModels, externalEditor 等)"
+
+# Write merged result
+echo "$MERGED" | python3 -c "import json,sys;print(json.dumps(json.loads(sys.stdin.read()),indent=2))" > "{RUNTIME}/settings.json"
+echo "✅ settings.json 已写入 runtime"
+
+# --- Verify enabledModels matches models.json providers ---
+MODELS_FILE="{RUNTIME}/models.json"
+if [ -f "$MODELS_FILE" ]; then
+  python3 -c "
+import json, sys
+with open(sys.argv[1]) as f: providers = set(json.load(f).get('providers',{}).keys())
+with open(sys.argv[2]) as f: enabled = json.load(f).get('enabledModels',[])
+bad = [m for m in enabled if m.split('/')[0] not in providers]
+if bad:
+    print('⚠️  enabledModels 包含 models.json 中不存在的 provider:')
+    for m in bad: print(f'    {m}')
+    print('   请手动检查 enabledModels 是否与 models.json 一致')
+else:
+    print('✅ enabledModels 与 models.json providers 一致')
+  " "$MODELS_FILE" "{RUNTIME}/settings.json" 2>/dev/null
+fi
+```
+
+### pi-websearch.json merge strategy
+
+**Default: keep local.** pi-websearch.json is almost entirely user-specific (searxng URL, script path).
+Only merge if user explicitly requested specific fields.
+
+### Other config files
+
+For other config files (auth.json, trust.json, models-store.json, pi-lsp.json):
+- **Default: keep local** unless user explicitly requested merge
+- If merge requested: show diff, ask user which fields to take from upstream
+- Apply same pattern: local base + selective upstream fields
 
 ---
 
 ## Step 5: Sync to Runtime
 
-After all selected modules are merged, sync to runtime.
+After all selected modules and config merges are done, sync module files to runtime.
 
-**pi-setup sync — copy all except protected:**
+**pi-setup sync — module files only, config files already handled in Step 4.5:**
 
 ```bash
 set -euo pipefail
@@ -405,10 +569,10 @@ if [ ! -d "$SRC" ]; then
   exit 1
 fi
 
-# Protected items — NEVER overwrite or delete in DST.
-# - Files: user configs that must not be overwritten by upstream
-# - Dirs: runtime data that would be LOST if overwritten or deleted
-PROTECTED="settings.json pi-websearch.json auth.json trust.json models-store.json sessions bin git npm skills searxng-instances"
+# Config files — already merged in Step 4.5, DO NOT overwrite from repo.
+# Protected dirs — runtime data, never sync from repo.
+CONFIG_FILES="settings.json pi-websearch.json auth.json trust.json models-store.json models.json pi-lsp.json subagent-model.json pi-chrome-devtools.json"
+PROTECTED_DIRS="sessions bin git npm searxng-instances skills"
 
 shopt -s nullglob
 
@@ -420,13 +584,22 @@ for item in "$SRC"/*; do
     continue
   fi
 
-  if echo " $PROTECTED " | grep -q " $name "; then
-    echo "⏭️ 跳过受保护: $name"
-  else
-    case "$name" in .|..) echo "⚠ 拒绝危险路径: $name" >&2; continue ;; esac
-    rm -rf "$DST/$name" 2>/dev/null
-    cp -r "$item" "$DST/$name" && echo "✅ 同步: $name"
+  # Skip config files (already handled by Step 4.5)
+  if echo " $CONFIG_FILES " | grep -q " $name "; then
+    echo "⏭️ 跳过配置文件（已由 Step 4.5 处理）: $name"
+    continue
   fi
+
+  # Skip protected dirs
+  if echo " $PROTECTED_DIRS " | grep -q " $name "; then
+    echo "⏭️ 跳过受保护目录: $name"
+    continue
+  fi
+
+  # Sync module files
+  case "$name" in .|..) echo "⚠ 拒绝危险路径: $name" >&2; continue ;; esac
+  rm -rf "$DST/$name" 2>/dev/null
+  cp -r "$item" "$DST/$name" && echo "✅ 同步: $name"
 done
 
 # ⛔ NEVER add a "cleanup" loop here (remove DST items not in SRC).
@@ -516,10 +689,10 @@ for file in {modified_path_1} {modified_path_2}; do
   fi
   case "$file" in
     *.ts)
-      node -e "var f=process.argv[1];try{require('fs').readFileSync(f,'utf8');console.log('✅ 可读: '+f)}catch(e){console.log('❌ 读取失败: '+f+' - '+e.message)}" "$file" 2>&1
+      python3 -c "import sys;open(sys.argv[1]).read();print('✅ 可读: '+sys.argv[1])" "$file" 2>&1
       ;;
     *.json)
-      node -e "var f=process.argv[1];try{JSON.parse(require('fs').readFileSync(f,'utf8'));console.log('✅ 合法JSON: '+f)}catch(e){console.log('❌ JSON解析失败: '+f+' - '+e.message)}" "$file" 2>&1
+      python3 -c "import json,sys;json.load(open(sys.argv[1]));print('✅ 合法JSON: '+sys.argv[1])" "$file" 2>&1
       ;;
     *)
       if [ -s "$file" ]; then
@@ -532,14 +705,37 @@ for file in {modified_path_1} {modified_path_2}; do
 done
 ```
 
-**Test 4 — protected files still intact:**
+**Test 4 — config files merged correctly:**
 
 ```bash
-for f in "{RUNTIME}/settings.json" "{RUNTIME}/pi-websearch.json" "{RUNTIME}/auth.json"; do
-  if [ -f "$f" ]; then
-    echo "✅ 受保护文件完好: $(basename "$f")"
+echo "--- 4. 配置文件验证 ---"
+# settings.json should be valid JSON AND contain user's custom fields
+RT_SETTINGS="{RUNTIME}/settings.json"
+if [ -f "$RT_SETTINGS" ]; then
+  python3 -c "import json,sys;json.load(open(sys.argv[1]));print('✅ settings.json: 合法JSON')" "$RT_SETTINGS" 2>&1
+  # Verify user fields preserved
+  PROVIDER=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('defaultProvider',''))" "$RT_SETTINGS" 2>/dev/null)
+  MODEL=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('defaultModel',''))" "$RT_SETTINGS" 2>/dev/null)
+  if [ -n "$PROVIDER" ] && [ "$PROVIDER" != "undefined" ]; then
+    echo "✅ settings.json: defaultProvider=$PROVIDER"
   else
-    echo "⚠️  受保护文件缺失: $f"
+    echo "⚠️  settings.json: defaultProvider 缺失"
+  fi
+  if [ -n "$MODEL" ] && [ "$MODEL" != "undefined" ]; then
+    echo "✅ settings.json: defaultModel=$MODEL"
+  else
+    echo "⚠️  settings.json: defaultModel 缺失"
+  fi
+else
+  echo "❌ settings.json 缺失"
+fi
+
+# Other config files still intact
+for f in "{RUNTIME}/auth.json" "{RUNTIME}/trust.json" "{RUNTIME}/pi-websearch.json"; do
+  if [ -f "$f" ]; then
+    echo "✅ 配置文件完好: $(basename "$f")"
+  else
+    echo "⚠️  配置文件缺失: $f"
   fi
 done
 ```
@@ -657,6 +853,37 @@ echo "✅ 已回滚到: $(git rev-parse --short HEAD)"
 - `{PRE_HEAD}` = `PI_SETUP_PRE_HEAD` for pi-setup, `AGENT_SETUP_PRE_HEAD` for agent-setup (recorded in Step 0).
 - `{PRE_MERGE_HEAD}` = `PI_SETUP_PRE_MERGE` for pi-setup, `AGENT_SETUP_PRE_MERGE` for agent-setup (recorded in Step 4).
 
-**After rollback, re-sync runtime from repos** (reverse Step 5) to undo the runtime sync:
+**After rollback, FULL reverse-sync runtime from repos:**
 
-- Re-run Step 5 (Sync to Runtime) to restore runtime to match the rolled-back repos.
+Unlike Step 5 (which skips config files because they were merged in Step 4.5), the rollback
+reverse-sync must restore ALL files — including config files — from the rolled-back repos.
+
+```bash
+set -euo pipefail
+SRC="{PI_SETUP}/agent"
+DST="{RUNTIME}"
+if [ ! -d "$SRC" ]; then echo "❌ 源目录不存在: $SRC" >&2; exit 1; fi
+
+# Only skip protected dirs — config files MUST be synced during rollback
+PROTECTED_DIRS="sessions bin git npm searxng-instances skills"
+
+shopt -s nullglob
+for item in "$SRC"/*; do
+  name=$(basename "$item")
+  [ -z "$name" ] && continue
+  case "$name" in .|..) continue ;; esac
+  if echo " $PROTECTED_DIRS " | grep -q " $name "; then
+    echo "⏭️ 跳过受保护目录: $name"
+  else
+    rm -rf "$DST/$name" 2>/dev/null
+    cp -r "$item" "$DST/$name" && echo "✅ 回滚同步: $name"
+  fi
+done
+
+# Also sync skills from agent-setup
+if [ -d "{AGENT_SETUP}/skills" ]; then
+  rm -rf "$DST/skills"
+  cp -r "{AGENT_SETUP}/skills" "$DST/skills" && echo "✅ 回滚同步: skills"
+fi
+echo "✅ runtime 已完整回滚"
+```
