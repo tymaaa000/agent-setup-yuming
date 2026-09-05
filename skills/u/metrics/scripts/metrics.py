@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """pi 用量度量 — 扫描 session .jsonl，聚合模型/项目/时间，输出可改进信号。"""
-import json, os, glob
+import json, os, glob, re
 from collections import defaultdict
 
 def _find_root():
@@ -17,6 +17,7 @@ per_model = defaultdict(lambda: {"turns":0,"in":0,"out":0,"r":0,"cr":0,"tok":0,"
 per_proj  = defaultdict(lambda: {"sess":0,"turns":0,"tok":0})
 per_day   = defaultdict(lambda: {"sess":0,"turns":0})
 mchg = defaultdict(int)
+skill_cnt = defaultdict(int)
 
 def scan():
     for pd in glob.glob(os.path.join(ROOT,"*")):
@@ -36,6 +37,10 @@ def scan():
                     elif t=="model_change": mchg[o.get("modelId","?")]+=1
                     elif t=="message":
                         m=o.get("message",{})
+                        for seg in (m.get("content") or []):
+                            txt = seg.get("text","") if isinstance(seg,dict) else str(seg)
+                            for sm in re.findall(r'<skill\s+name="([^"]+)"', txt):
+                                skill_cnt[sm]+=1
                         if m.get("role")!="assistant": continue
                         u=m.get("usage") or {}; mdl=m.get("model","?")
                         pm=per_model[mdl]; pm["turns"]+=1
@@ -65,6 +70,12 @@ for p,d in sorted(per_proj.items(),key=lambda x:-x[1]["tok"])[:8]:
 print()
 print("### 模型切换次数")
 for m,n in sorted(mchg.items(),key=lambda x:-x[1])[:5]: print(f"  {m}: {n}次")
+print()
+print("### 技能使用 (top)")
+if skill_cnt:
+    for k,v in sorted(skill_cnt.items(),key=lambda x:-x[1])[:12]: print(f"  {k}: {v}次")
+else:
+    print("  (无)")
 print()
 print("### 活跃日期 (近7天)")
 for d in sorted(per_day.keys())[-7:]: print(f"  {d}: {per_day[d]['sess']}会话/{f(per_day[d]['turns'])}轮")
