@@ -25,6 +25,12 @@ python3 "$(dirname "$0")/scripts/metrics.py" 2>/dev/null || python3 scripts/metr
 - **活跃日期**：使用频率 → 是否日常在用、哪天最忙。
 - **模型切换次数**：频繁切模型说明你在试错或任务类型变化多。
 
+### 工具/扩展/子代理（工作性质的量化）
+- **工具调用 top**：`bash` 多 = 动手/调试为主；`read/edit/write` 多 = 改代码/写文件；`WebSearch` 多 = 查资料；`subagent`/`get_subagent_result` = 你启用了多少并行子代理；`chrome_devtools_*` = 网页/桌面自动化。
+- **扩展**：扩展提供的工具会以工具名出现（如 `chrome_devtools_*` 来自 Chrome DevTools 扩展），所以扩展的使用**能被工具统计到**。
+- **工作模式**：把「项目目录」+「工具组合」结合起来看，能识别工作类型。例如 `Linux-Work-debug` + `bash/edit` 多 = 驱动/调试；`master-投稿论文` + `WebSearch/write` 多 = 论文写作/检索。
+- **技能**：`<skill name="X">` 标签出现才计数（较稀疏），代表该技能被加载进对话。
+
 ### 2) pi 的可改进方向
 - **最大消耗模型**：若某模型占绝大多数 token，但你已经停用它/它已过期 → 提醒你换模型。
 - **推理 token 占比**：占比高 → 该场景可能"想太多"，可降低 `thinking` 级别省 token。

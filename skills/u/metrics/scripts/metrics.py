@@ -18,6 +18,7 @@ per_proj  = defaultdict(lambda: {"sess":0,"turns":0,"tok":0})
 per_day   = defaultdict(lambda: {"sess":0,"turns":0})
 mchg = defaultdict(int)
 skill_cnt = defaultdict(int)
+tool_cnt = defaultdict(int)
 
 def scan():
     for pd in glob.glob(os.path.join(ROOT,"*")):
@@ -38,7 +39,12 @@ def scan():
                     elif t=="message":
                         m=o.get("message",{})
                         for seg in (m.get("content") or []):
-                            txt = seg.get("text","") if isinstance(seg,dict) else str(seg)
+                            if isinstance(seg,dict):
+                                txt = seg.get("text","")
+                                if seg.get("type")=="toolCall":
+                                    tool_cnt[seg.get("name","?")]+=1
+                            else:
+                                txt = str(seg)
                             for sm in re.findall(r'<skill\s+name="([^"]+)"', txt):
                                 skill_cnt[sm]+=1
                         if m.get("role")!="assistant": continue
@@ -77,8 +83,20 @@ if skill_cnt:
 else:
     print("  (无)")
 print()
+print("### 工具/扩展调用 (top)")
+if tool_cnt:
+    for k,v in sorted(tool_cnt.items(),key=lambda x:-x[1])[:15]: print(f"  {k}: {v}")
+else:
+    print("  (无)")
+print()
 print("### 活跃日期 (近7天)")
 for d in sorted(per_day.keys())[-7:]: print(f"  {d}: {per_day[d]['sess']}会话/{f(per_day[d]['turns'])}轮")
+print()
+print("### 每日趋势 (近10天)")
+maxd=max([per_day[d]["turns"] for d in per_day] or [1])
+for d in sorted(per_day.keys())[-10:]:
+    bar="#"*max(1,int(per_day[d]["turns"]/max(1,maxd)*30))
+    print(f"  {d} {f(per_day[d]['turns']):>6} {bar}")
 print()
 print("### 改进信号")
 if per_model:
