@@ -50,3 +50,9 @@ python3 "$(dirname "$0")/scripts/metrics.py" 2>/dev/null || python3 scripts/metr
 ## 说明
 - 只读 session 文件，**不做任何修改**。
 - 成本字段 pi 未必填充（可能为 0），此时以 token 为主。
+
+## 基线 & 自我迭代
+
+- `metrics.py` 默认输出**当前**报告 + `Delta`(对比上次基线) + `推荐`。
+- `metrics.py --save-baseline` 把本轮数字存为 `metrics-baseline.json`（运行时数据，非 git），供下次对比。
+- 搭配 [`../iterate`](../iterate) 技能使用：运行 metrics → 存基线 → 得到「你 + pi 的下一步动作」。
