@@ -19,6 +19,7 @@ per_day   = defaultdict(lambda: {"sess":0,"turns":0})
 mchg = defaultdict(int)
 skill_cnt = defaultdict(int)
 tool_cnt = defaultdict(int)
+proj_tools = defaultdict(lambda: defaultdict(int))
 
 def scan():
     for pd in glob.glob(os.path.join(ROOT,"*")):
@@ -43,6 +44,7 @@ def scan():
                                 txt = seg.get("text","")
                                 if seg.get("type")=="toolCall":
                                     tool_cnt[seg.get("name","?")]+=1
+                                    proj_tools[proj][seg.get("name","?")]+=1
                             else:
                                 txt = str(seg)
                             for sm in re.findall(r'<skill\s+name="([^"]+)"', txt):
@@ -56,6 +58,18 @@ def scan():
                         pm["cost"]+=(u.get("cost") or {}).get("total",0) or 0
                         per_proj[proj]["turns"]+=1; per_proj[proj]["tok"]+=u.get("totalTokens",0)
                         per_day[o.get("timestamp","")[:10]]["turns"]+=1
+
+
+def classify(proj, t):
+    pn=proj
+    kl={'linux-work':'驱动/调试','Linux-Work':'驱动/调试','driver':'驱动/调试','i.mx':'驱动/调试'}
+    if any(k in pn for k in ['Linux-Work','Linux_Work','linux-','driver','debug','i.MX','i.mx']): return '驱动/调试'
+    if any(k in pn for k in ['论文','paper','thesis','投稿','summe','research']): return '论文/研究'
+    if any(k in pn for k in ['ppt','slide','slid']): return 'PPT'
+    if any(k in pn for k in ['piagent','pi-setup','pi-setup','Program Files/piagent']): return 'pi 配置'
+    if t.get('chrome_devtools_evaluate',0)+t.get('chrome_devtools_navigate',0)>=3: return '网页自动化'
+    if t.get('WebSearch',0)>=6: return '检索/写作辅助'
+    return '其他'
 
 def f(v): return f"{v:,}"
 def p(a,b): return f"{(a/b*100 if b else 0):.0f}%"
@@ -71,8 +85,18 @@ for m,d in sorted(per_model.items(),key=lambda x:-x[1]["tok"]):
     print(f"{'':<28}{'推理占比':>13}{p(d['r'],d['tok']):>8}   avg/轮 {f(d['tok']//max(1,d['turns'])):>9}")
 print()
 print("### 按项目 (token TOP)")
-for p,d in sorted(per_proj.items(),key=lambda x:-x[1]["tok"])[:8]:
-    print(f"  {p[:42]:<43}{d['sess']}会话/{f(d['turns'])}轮/{f(d['tok'])}token")
+for pp,d in sorted(per_proj.items(),key=lambda x:-x[1]["tok"])[:8]:
+    print(f"  {pp[:42]:<43}{d['sess']}会话/{f(d['turns'])}轮/{f(d['tok'])}token")
+print()
+
+cat=defaultdict(lambda:[0,0,0])  # tok,turns,sess
+for proj,d in per_proj.items():
+    c=classify(proj, proj_tools[proj])
+    cat[c][0]+=d["tok"]; cat[c][1]+=d["turns"]; cat[c][2]+=d["sess"]
+tot=sum(v[0] for v in cat.values())
+print("### 工作模式分类 (token)")
+for c,(tk,tn,ss) in sorted(cat.items(), key=lambda x:-x[1][0]):
+    print(f"  {c:<12}{ss}会话/{f(tn)}轮/{f(tk)}token  ({p(tk,tot)})")
 print()
 print("### 模型切换次数")
 for m,n in sorted(mchg.items(),key=lambda x:-x[1])[:5]: print(f"  {m}: {n}次")
