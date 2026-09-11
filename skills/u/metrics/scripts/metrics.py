@@ -103,7 +103,7 @@ def build_recommendations(cur,base):
     tok=cur["totalTokens"]
     top=max(cur["perModelTokens"].items(),key=lambda x:x[1])[0]
     if not top.startswith("deepseek") and cur["perModelTokens"][top]>tok*0.2:
-        rec.append(("你",f"主力在用 {top}（非 deepseek）占 {pct(cur['perModelTokens'][top],tok)}——续费或切到 deepseek"))
+        rec.append(("你",f"主力模型为 {top}，占 {pct(cur['perModelTokens'][top],tok)}——根据任务成功率和成本决定是否保留，不要仅按供应商切换"))
     if cur["reasoningPct"]>0.15: rec.append(("你",f"推理token占比 {pct(cur['reasoningPct']*100,100)}——常规任务把 thinking 降到 low/medium"))
     if cur["avgTokensPerTurn"]>150000: rec.append(("你",f"平均每轮 {f(cur['avgTokensPerTurn'])} token——精简输入/控制上下文长度"))
     if cur["cacheReadPct"]<0.5: rec.append(("pi",f"缓存读占比 {pct(cur['cacheReadPct']*100,100)}——尽量复用上下文，少开新会话"))
@@ -125,9 +125,9 @@ def main():
     print("="*72); print("PI 用量度量报告"); print("="*72)
     print(f"总轮次 {f(turns)}  总token {f(tok)}")
     print()
-    print("### 按模型"); print(f"{'模型':<28}{'轮次':>5}{'输入':>11}{'输出':>10}{'推理':>9}{'缓存读':>11}{'总token':>12}")
+    print("### 按模型"); print(f"{'模型':<28} {'轮次':>7} {'输入':>12} {'输出':>12} {'推理':>12} {'缓存读':>14} {'总token':>14}")
     for m,d in sorted(per_model.items(),key=lambda x:-x[1]["tok"]):
-        print(f"{m[:26]:<28}{d['turns']:>5}{f(d['in']):>11}{f(d['out']):>10}{f(d['r']):>9}{f(d['cr']):>11}{f(d['tok']):>12}")
+        print(f"{m[:26]:<28} {d['turns']:>7} {f(d['in']):>12} {f(d['out']):>12} {f(d['r']):>12} {f(d['cr']):>14} {f(d['tok']):>14}")
     print()
     print("### 工作模式分类 (token)")
     cat=defaultdict(lambda:[0,0,0])
@@ -142,7 +142,7 @@ def main():
         d_rp=cur["reasoningPct"]-base["reasoningPct"]
         d_cr=cur["cacheReadPct"]-base["cacheReadPct"]
         arrow=lambda x:("↑" if x>0 else ("↓" if x<0 else "="))
-        print(f"  avg/轮 {f(cur['avgTokensPerTurn'])} {arrow(d_avg)}  推理占比 {pct(cur['reasoningPct']*100,100)} {arrow(d_rp)}  缓存读占比 {pct(cur['cacheReadPct']*100,100)} {arrow(d_cr)}")
+        print(f"  avg/轮 {f(cur['avgTokensPerTurn'])} {arrow(d_avg)}  推理占比 {cur['reasoningPct']*100:.1f}% {arrow(d_rp)}  缓存读占比 {cur['cacheReadPct']*100:.1f}% {arrow(d_cr)}")
     else:
         print("### Delta（vs 上次基线）"); print("  (暂无基线，--save-baseline 建立)")
     print()
