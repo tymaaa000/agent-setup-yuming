@@ -1,58 +1,56 @@
 ---
 name: metrics
-description: 量化 pi 使用情况——按模型/项目/时间聚合 token 与成本，并输出"你如何用 pi"与"pi 可改进方向"。当用户想了解用量、成本、模型选择、或"怎么用 pi 更省/更高效"时使用。
+description: Quantify pi usage — aggregate tokens and cost by model/project/time and report "how you use pi" plus "where pi can improve". Use when the user asks about usage, cost, model choice, or how to spend fewer tokens and work more efficiently.
 ---
 
-# pi 用量度量（metrics）
+# pi usage metrics
 
-运行本技能目录下的脚本，生成你的 pi 使用报告。
+Run the scripts in this skill directory to generate a usage report for your pi sessions.
 
-## 运行
+## Run
 
 ```bash
 python3 "$(dirname "$0")/scripts/metrics.py" 2>/dev/null || python3 scripts/metrics.py
-# 若 Pi 的 config 目录不是默认位置，可用环境变量指定：
+# When the pi config directory is not in the default location:
 # PI_SESSIONS=/path/to/agent/sessions python3 scripts/metrics.py
 ```
 
-## 解读报告（回答两个问题）
+## Reading the report (two questions)
 
-报告分几块：
+### 1) How you use pi
+- **By model**: turns and input / output / reasoning / cache-read tokens. Shows the workhorse model.
+- **By project**: which directories consume the most → where your effort goes.
+- **Active dates**: usage frequency → daily driver or occasional use, and which days are busiest.
+- **Model switches**: frequent switching means experimentation or varied task types.
 
-### 1) 你如何用 pi
-- **按模型**：轮次、输入/输出/推理/缓存读 token、总 token。看出你主力用哪个模型。
-- **按项目**：哪些目录（项目）消耗最多 → 你的精力/工作重心在哪。
-- **活跃日期**：使用频率 → 是否日常在用、哪天最忙。
-- **模型切换次数**：频繁切模型说明你在试错或任务类型变化多。
+### Tools / extensions / subagents (what the work looks like)
+- **Top tools**: `bash` heavy = hands-on debugging; `read/edit/write` = code and file changes; `WebSearch` = research; `subagent`/`get_subagent_result` = parallel delegation; `chrome_devtools_*` = browser/desktop automation.
+- **Extensions**: extension-provided tools appear under their own names, so extension use is measurable.
+- **Work patterns**: project directory plus tool mix identifies the work type. For example `Linux-Work-debug` with `bash/edit` = driver/debug; a paper project with `WebSearch/write` = writing/research.
+- **Skills**: counted only when a `<skill name="X">` tag appears (sparse) — it means the skill entered the conversation.
 
-### 工具/扩展/子代理（工作性质的量化）
-- **工具调用 top**：`bash` 多 = 动手/调试为主；`read/edit/write` 多 = 改代码/写文件；`WebSearch` 多 = 查资料；`subagent`/`get_subagent_result` = 你启用了多少并行子代理；`chrome_devtools_*` = 网页/桌面自动化。
-- **扩展**：扩展提供的工具会以工具名出现（如 `chrome_devtools_*` 来自 Chrome DevTools 扩展），所以扩展的使用**能被工具统计到**。
-- **工作模式**：把「项目目录」+「工具组合」结合起来看，能识别工作类型。例如 `Linux-Work-debug` + `bash/edit` 多 = 驱动/调试；`master-投稿论文` + `WebSearch/write` 多 = 论文写作/检索。
-- **技能**：`<skill name="X">` 标签出现才计数（较稀疏），代表该技能被加载进对话。
+### Work-pattern classification (where effort goes)
+- The script classifies sessions by project directory name plus tool mix (paper/research, driver/debug, PPT, web automation, pi config, …).
+- The report shows each work type's share of tokens, turns, and sessions.
+- Use it to see where pi is actually spent and to refocus on high-value work.
 
-### 工作模式分类（精力分配）
-- 脚本按「项目目录名 + 工具组合」把 session 自动归类（如 论文/研究、驱动/调试、PPT、网页自动化、pi 配置…）。
-- 报告会用 token/轮次/会话数展示**每个工作类型占你总精力的比例**。
-- 用途：一眼看出你**把 pi 主要用在哪些工作**，聚焦高价值/高消耗的方向。
+### 2) Where pi can improve
+- **Top consumer**: if one model dominates the tokens but you already retired it or it expired → switch models.
+- **Reasoning share**: high → that scenario may be overthinking; lower the `thinking` level to save tokens.
+- **Cache-read share**: high → good context reuse and lower cost (a good signal).
+- **Input/output ratio**: output far larger than input → replies are verbose; ask for tighter instructions.
 
-### 2) pi 的可改进方向
-- **最大消耗模型**：若某模型占绝大多数 token，但你已经停用它/它已过期 → 提醒你换模型。
-- **推理 token 占比**：占比高 → 该场景可能"想太多"，可降低 `thinking` 级别省 token。
-- **缓存读占比**：占比高 → 上下文复用好、成本低（良好信号）。
-- **输入/输出 ratio**：输出远大于输入 → 回复可能冗长，可提醒自己给更精简的指令。
+## Advice to give the user
+- Report the top model and the top consumer so the user knows the workhorse and whether to renew or switch.
+- Turn reasoning share and output ratio into **actionable advice**: which thinking level to use, whether to trim prompts.
+- Let the user see where pi is used and whether it is used well; let pi know where to optimize (fewer tokens, lower thinking, tighter output).
 
-## 给用户的建议口径
-- 把「按模型」+「最大消耗模型」告诉用户：让他知道主力模型、以及是否该续费/切换。
-- 把「推理占比」/「输出比」作为**操作建议**：该用哪档 thinking、该不该压缩 prompt。
-- 让用户从数据里看到自己"把 pi 用在哪/用得对不对"，从而调整用法；也让 pi 知道该往哪优化（省 token、降 thinking、精简输出）。
+## Notes
+- Read-only over session files; nothing is modified.
+- The cost field may be unset (often 0); rely on tokens then.
 
-## 说明
-- 只读 session 文件，**不做任何修改**。
-- 成本字段 pi 未必填充（可能为 0），此时以 token 为主。
+## Baseline and self-iteration
 
-## 基线 & 自我迭代
-
-- `metrics.py` 默认输出**当前**报告 + `Delta`(对比上次基线) + `推荐`。
-- `metrics.py --save-baseline` 把本轮数字存为 `metrics-baseline.json`（运行时数据，非 git），供下次对比。
-- 搭配 [`../iterate`](../iterate) 技能使用：运行 metrics → 存基线 → 得到「你 + pi 的下一步动作」。
+- `metrics.py` prints the **current** report plus `Delta` (against the last baseline) and `Recommendations`.
+- `metrics.py --save-baseline` stores this run in `metrics-baseline.json` (runtime data, not git) for the next comparison.
+- Pair it with the [`../iterate`](../iterate) skill: run metrics → save the baseline → get the next actions for you and for pi.

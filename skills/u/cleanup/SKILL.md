@@ -1,36 +1,36 @@
 ---
 name: cleanup
-description: 清理 pi runtime 的临时/旧数据——删除超过 N 天的旧会话、截断崩溃日志，默认 dry-run 需确认后才执行。当用户觉得 pi 目录臃肿、想清 session/日志、或定期维护时使用。
+description: Clean temporary and old pi runtime data — delete sessions older than N days and truncate the crash log. Dry-run by default; nothing is deleted without confirmation. Use when the pi directory feels bloated, when sessions or logs need clearing, or for routine maintenance.
 ---
 
-# pi runtime 清理（cleanup）
+# pi runtime cleanup
 
-清理 pi 运行时目录里的**可再生物**：旧会话（session）、崩溃日志。**默认 dry-run（只列出不删）**，确认后才真正删除。
+Clean the **regenerable** material in the pi runtime directory: old sessions and the crash log. **Dry-run by default** — nothing is deleted until you confirm.
 
-## 运行
+## Run
 
 ```bash
-# 1) 先看有什么（dry-run，默认 30 天）
+# 1) See what is there (dry-run, default 30 days)
 bash "$(dirname "$0")/scripts/cleanup.sh" --age 30
 
-# 2) 调整年龄阈值看更多
+# 2) Try a different age threshold
 bash scripts/cleanup.sh --age 7
 
-# 3) 确认无误后真正清理（删旧会话 + 截断崩溃日志）
+# 3) Apply the cleanup (delete old sessions + truncate the crash log)
 bash scripts/cleanup.sh --age 30 --apply
 ```
 
-## 安全原则（重要）
+## Safety principles (important)
 
-1. **默认 dry-run**：不 `--apply` 绝不删除。
-2. **不删最近会话**：脚本会跳过最新一个 `.jsonl`（保护当前活动会话）。
-3. **只删旧会话 + 截断日志**：不碰 extensions/skills/settings 等配置。
-4. **路径守卫**：脚本只操作 sessions 目录和 pi-crash.log，且做了路径检测。
+1. **Dry-run by default**: without `--apply` nothing is deleted.
+2. **Never delete the newest session**: the script skips the most recent `.jsonl` to protect the active session.
+3. **Only old sessions and logs**: extensions, skills, and settings are never touched.
+4. **Path guards**: the script only operates on the sessions directory and `pi-crash.log`.
 
-## 与 metrics 配合
+## With metrics
 
-- 先用 `/metrics` 看数据 → 再用 `/cleanup` 清掉不再需要的旧会话。
-- 建议定期（如每月）跑一次 dry-run，空间紧张时再 `--apply`。
+- Run `/metrics` first to see the data, then `/cleanup` to remove sessions you no longer need.
+- A monthly dry-run is a good habit; add `--apply` when space is tight.
 
-## 说明
-- 此技能只清**旧 session 和日志**。大的 `git/`、`npm/` 历史膨胀需另处理（见 repo README 的浅克隆建议）。
+## Notes
+- This skill only clears **old sessions and logs**. Large `git/` or `npm/` histories need separate handling.

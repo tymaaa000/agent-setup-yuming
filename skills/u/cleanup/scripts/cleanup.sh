@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# pi runtime 清理 — 默认 dry-run；加 --apply 才真正删除旧会话 + 截断崩溃日志。
-# 用法: cleanup.sh [--age N] [--apply]
+# pi runtime cleanup — dry-run by default; pass --apply to delete old sessions
+# and truncate the crash log.
+# Usage: cleanup.sh [--age N] [--apply]
 set -euo pipefail
 
 AGE=30
@@ -9,71 +10,72 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --age) AGE="$2"; shift 2;;
     --apply) APPLY=1; shift;;
-    *) echo "未知参数: $1"; exit 1;;
+    *) echo "Unknown argument: $1"; exit 1;;
   esac
 done
 
-# 解析 sessions 目录（与 metrics 相同的候选逻辑）
+# Resolve the sessions directory (same candidate order as metrics)
 SESSION_DIR=$(python3 - << 'PY'
 import os
-c=[os.environ.get("PI_SESSIONS"), os.path.expanduser("~/.pi/agent/sessions")]
-if os.environ.get("PI_CODING_AGENT_DIR"): c.append(os.path.join(os.environ["PI_CODING_AGENT_DIR"],"sessions"))
-c+=["/mnt/d/Program Files/piagent/.pi/agent/sessions"]
+c=[os.environ.get("PI_SESSIONS"),
+   os.path.join(os.environ["PI_CODING_AGENT_DIR"], "sessions") if os.environ.get("PI_CODING_AGENT_DIR") else None,
+   os.path.expanduser("~/pi/agent/sessions"),
+   os.path.expanduser("~/.pi/agent/sessions")]
 for x in c:
     if x and os.path.isdir(x):
         print(x); break
 else:
-    print(os.path.expanduser("~/.pi/agent/sessions"))
+    print(os.path.expanduser("~/pi/agent/sessions"))
 PY
 )
 
-echo "sessions 目录: $SESSION_DIR"
-echo "年龄阈值: ${AGE} 天"
-echo "模式: $([ $APPLY -eq 1 ] && echo 'APPLY(删) ' || echo 'dry-run(只列出)')"
+echo "sessions dir: $SESSION_DIR"
+echo "age threshold: ${AGE} days"
+echo "mode: $([ $APPLY -eq 1 ] && echo 'APPLY (delete)' || echo 'dry-run (list only)')"
 echo
 
 OLD_FILES=$(find "$SESSION_DIR" -name '*.jsonl' -type f -mtime +"$AGE" 2>/dev/null)
 TOTAL_SIZE=0
 if [ -z "$OLD_FILES" ]; then
-  echo "✅ 没有超过 ${AGE} 天的会话文件"
+  echo "✅ No session files older than ${AGE} days"
 else
-  echo "--- 将处理以下会话（按大小）---"
+  echo "--- Sessions to process (by size) ---"
   while IFS= read -r f; do
     sz=$(du -k "$f" | cut -f1)
     TOTAL_SIZE=$((TOTAL_SIZE+sz))
     printf "  %8.1f MB  %s\n" "$(echo "scale=1;$sz/1024"|bc)" "$f"
   done <<< "$OLD_FILES"
-  echo "--- 共 ${TOTAL_SIZE} KB ---"
+  echo "--- Total ${TOTAL_SIZE} KB ---"
 fi
 
-# 崩溃日志
+# Crash log
 CRASH_LOG=$(python3 - << 'PY'
 import os
-c=[os.path.expanduser("~/.pi/agent/pi-crash.log")]
+c=[os.path.expanduser("~/pi/agent/pi-crash.log")]
 if os.environ.get("PI_CODING_AGENT_DIR"): c.append(os.path.join(os.environ["PI_CODING_AGENT_DIR"],"pi-crash.log"))
-c+=["/mnt/d/Program Files/piagent/.pi/agent/pi-crash.log"]
+c.append(os.path.expanduser("~/.pi/agent/pi-crash.log"))
 for x in c:
     if x and os.path.isfile(x): print(x); break
 PY
 )
 if [ -n "$CRASH_LOG" ]; then
-  echo "崩溃日志: $CRASH_LOG ($(du -h "$CRASH_LOG"|cut -f1))"
+  echo "crash log: $CRASH_LOG ($(du -h "$CRASH_LOG"|cut -f1))"
 fi
 
 if [ $APPLY -eq 1 ]; then
   echo
-  echo "⚠️  执行删除..."
+  echo "⚠️  Deleting..."
   if [ -n "$OLD_FILES" ]; then
-    # 保底：不删最近一个会话（保护当前活动会话）
+    # Safety: never delete the newest session (protects the active one)
     NEWEST=$(ls -t "$SESSION_DIR"/*/*.jsonl 2>/dev/null | head -1)
     while IFS= read -r f; do
-      [ "$f" = "$NEWEST" ] && { echo "⏭️ 跳过最新会话: $f"; continue; }
-      rm -f "$f" && echo "  🗑️ 删除: $f"
+      [ "$f" = "$NEWEST" ] && { echo "⏭️ Skipping newest session: $f"; continue; }
+      rm -f "$f" && echo "  🗑️ deleted: $f"
     done <<< "$OLD_FILES"
   fi
-  if [ -n "$CRASH_LOG" ]; then : > "$CRASH_LOG" && echo "  🗑️ 已截断崩溃日志"; fi
-  echo "✅ 清理完成"
+  if [ -n "$CRASH_LOG" ]; then : > "$CRASH_LOG" && echo "  🗑️ crash log truncated"; fi
+  echo "✅ Cleanup done"
 else
   echo
-  echo "（dry-run）确认无误后运行: cleanup.sh --age $AGE --apply"
+  echo "(dry-run) When it looks right, run: cleanup.sh --age $AGE --apply"
 fi

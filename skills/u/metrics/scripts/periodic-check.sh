@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
+# periodic-check.sh — report how old the metrics baseline is.
+# Usage: periodic-check.sh [days]   (default 3)
+# Prints "fresh:Ndays", "stale:Ndays", or "no-baseline".
 set -euo pipefail
 
 DAYS="${1:-3}"
-AGENT_DIR="${PI_CODING_AGENT_DIR:-/mnt/d/Program Files/piagent/.pi/agent}"
+AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/pi/agent}"
 BASELINE="$AGENT_DIR/metrics-baseline.json"
 
 if [[ ! -f "$BASELINE" ]]; then
