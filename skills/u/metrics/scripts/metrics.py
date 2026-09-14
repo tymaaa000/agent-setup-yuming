@@ -104,8 +104,8 @@ def save_baseline(cur):
 def build_recommendations(cur,base):
     rec=[]  # (who, tip)
     tok=cur["totalTokens"]
-    top=max(cur["perModelTokens"].items(),key=lambda x:x[1])[0]
-    if not top.startswith("deepseek") and cur["perModelTokens"][top]>tok*0.2:
+    top=max(cur["perModelTokens"].items(),key=lambda x:x[1],default=(None,0))[0]
+    if top and not top.startswith("deepseek") and cur["perModelTokens"][top]>tok*0.2:
         rec.append(("you",f"Primary model is {top} at {pct(cur['perModelTokens'][top],tok)} — decide from task success rate and cost, not vendor alone"))
     if cur["reasoningPct"]>0.15: rec.append(("you",f"Reasoning tokens are {pct(cur['reasoningPct']*100,100)} — lower thinking to low/medium for routine work"))
     if cur["avgTokensPerTurn"]>150000: rec.append(("you",f"Average {f(cur['avgTokensPerTurn'])} tokens per turn — trim inputs and control context length"))

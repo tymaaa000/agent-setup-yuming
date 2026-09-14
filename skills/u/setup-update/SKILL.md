@@ -21,6 +21,17 @@ This machine runs a Linux-native pi installation:
 
 Remotes: `origin` = the user's personal repo, `upstream` = the aqua2k1 original.
 
+**Shell preamble.** Every `bash` call runs in a fresh process, so variables do not persist.
+Prepend this line to any block you execute (or export it once and run the block in the same
+shell):
+
+```bash
+ROOT="${PI_ROOT:-$HOME/pi}"; RUNTIME="${PI_CODING_AGENT_DIR:-$ROOT/agent}"; PI_SETUP="$ROOT/repos/pi-setup"; AGENT_SETUP="$ROOT/repos/agent-setup"; SYNC="$ROOT/bin/sync-pi.sh"
+```
+
+The scripts themselves already honour `PI_ROOT` / `PI_CODING_AGENT_DIR`, so passing those
+two variables is enough to run a non-default installation.
+
 **⚠️ Before any destructive operation (rm, cp -r), verify each path starts with the expected
 prefix (for example `/home/<user>/pi/`) to prevent catastrophic misconfiguration.**
 
@@ -31,7 +42,7 @@ prefix (for example `/home/<user>/pi/`) to prevent catastrophic misconfiguration
 **CRITICAL: stop if the working tree is dirty.** A merge can silently overwrite local changes.
 
 ```bash
-for repo in "$HOME/pi/repos/pi-setup" "$HOME/pi/repos/agent-setup"; do
+for repo in "$PI_SETUP" "$AGENT_SETUP"; do
   cd "$repo"
   if [ -n "$(git status --porcelain)" ]; then
     echo "❌ $repo has uncommitted changes — commit or stash them first:" >&2
@@ -43,8 +54,8 @@ done
 echo "✅ Working trees are clean"
 
 # Record pre-merge HEAD for rollback
-PI_SETUP_PRE_HEAD=$(cd "$HOME/pi/repos/pi-setup" && git rev-parse HEAD)
-AGENT_SETUP_PRE_HEAD=$(cd "$HOME/pi/repos/agent-setup" && git rev-parse HEAD)
+PI_SETUP_PRE_HEAD=$(cd "$PI_SETUP" && git rev-parse HEAD)
+AGENT_SETUP_PRE_HEAD=$(cd "$AGENT_SETUP" && git rev-parse HEAD)
 echo "PI_SETUP_PRE_HEAD=$PI_SETUP_PRE_HEAD"
 echo "AGENT_SETUP_PRE_HEAD=$AGENT_SETUP_PRE_HEAD"
 ```
@@ -56,7 +67,7 @@ echo "AGENT_SETUP_PRE_HEAD=$AGENT_SETUP_PRE_HEAD"
 **Record the pre-pull HEAD to detect what `git pull` actually brought in:**
 
 ```bash
-cd "$HOME/pi/repos/pi-setup"
+cd "$PI_SETUP"
 PI_SETUP_PRE_PULL=$(git rev-parse HEAD)
 BRANCH=$(git rev-parse --abbrev-ref HEAD) && git pull origin "$BRANCH" || echo "⚠ pi-setup pull failed"
 if [ -n "$(git diff --name-only --diff-filter=U 2>/dev/null)" ]; then
@@ -66,7 +77,7 @@ if [ -n "$(git diff --name-only --diff-filter=U 2>/dev/null)" ]; then
 fi
 PI_SETUP_POST_PULL=$(git rev-parse HEAD)
 
-cd "$HOME/pi/repos/agent-setup"
+cd "$AGENT_SETUP"
 AGENT_SETUP_PRE_PULL=$(git rev-parse HEAD)
 BRANCH=$(git rev-parse --abbrev-ref HEAD) && git pull origin "$BRANCH" || echo "⚠ agent-setup pull failed"
 if [ -n "$(git diff --name-only --diff-filter=U 2>/dev/null)" ]; then
@@ -78,8 +89,8 @@ AGENT_SETUP_POST_PULL=$(git rev-parse HEAD)
 ```
 
 ```bash
-cd "$HOME/pi/repos/pi-setup" && git fetch upstream 2>/dev/null || echo "⚠ pi-setup upstream unreachable"
-cd "$HOME/pi/repos/agent-setup" && git fetch upstream 2>/dev/null || echo "⚠ agent-setup upstream unreachable"
+cd "$PI_SETUP" && git fetch upstream 2>/dev/null || echo "⚠ pi-setup upstream unreachable"
+cd "$AGENT_SETUP" && git fetch upstream 2>/dev/null || echo "⚠ agent-setup upstream unreachable"
 ```
 
 ---
@@ -110,7 +121,7 @@ zero false negatives:
 ### pi-setup
 
 ```bash
-cd "$HOME/pi/repos/pi-setup"
+cd "$PI_SETUP"
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 MERGE_BASE=$(git merge-base origin/$BRANCH upstream/$BRANCH 2>/dev/null || echo "")
 
@@ -161,7 +172,7 @@ fi
 ### agent-setup
 
 ```bash
-cd "$HOME/pi/repos/agent-setup"
+cd "$AGENT_SETUP"
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 MERGE_BASE=$(git merge-base origin/$BRANCH upstream/$BRANCH 2>/dev/null || echo "")
 
@@ -251,7 +262,7 @@ For each config file in the diff, compare fields:
 **settings.json — extract and compare key fields:**
 
 ```bash
-cd "$HOME/pi/repos/pi-setup"
+cd "$PI_SETUP"
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 UPSTREAM_SETTINGS=$(git show upstream/$BRANCH:agent/settings.json 2>/dev/null)
@@ -291,7 +302,7 @@ if um != lm:
 **pi-websearch.json — compare key fields:**
 
 ```bash
-cd "$HOME/pi/repos/pi-setup"
+cd "$PI_SETUP"
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 UPSTREAM_WS=$(git show upstream/$BRANCH:agent/pi-websearch.json 2>/dev/null)
 LOCAL_WS=$(git show origin/$BRANCH:agent/pi-websearch.json 2>/dev/null)
@@ -367,13 +378,13 @@ settings.json `packages` diff), install each new package:
 
 ```bash
 # For each new package in NEW_PKGS:
-"$HOME/pi/bin/pi" install {package_name}
+"$ROOT/bin/pi" install {package_name}
 ```
 
 After installing, verify:
 
 ```bash
-"$HOME/pi/bin/pi" list
+"$ROOT/bin/pi" list
 ```
 
 Report which packages were installed and note: "⚠️ npm packages install into the RUNTIME
@@ -389,8 +400,8 @@ Only merge **module files** here. Config files are handled in Step 4.5.
 **Record the pre-merge HEAD for precise rollback (undo the merge only, not the pull):**
 
 ```bash
-PI_SETUP_PRE_MERGE=$(cd "$HOME/pi/repos/pi-setup" && git rev-parse HEAD)
-AGENT_SETUP_PRE_MERGE=$(cd "$HOME/pi/repos/agent-setup" && git rev-parse HEAD)
+PI_SETUP_PRE_MERGE=$(cd "$PI_SETUP" && git rev-parse HEAD)
+AGENT_SETUP_PRE_MERGE=$(cd "$AGENT_SETUP" && git rev-parse HEAD)
 ```
 
 **CRITICAL: handle by diff status, NOT a uniform `git checkout`:**
@@ -457,11 +468,11 @@ Goal: **keep every user-customized field and selectively take upstream-recommend
 - `packages` — union merge (keep local + add upstream additions)
 
 ```bash
-cd "$HOME/pi/repos/pi-setup"
+cd "$PI_SETUP"
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 UPSTREAM_SETTINGS=$(git show upstream/$BRANCH:agent/settings.json 2>/dev/null)
-LOCAL_SETTINGS=$(cat "$HOME/pi/agent/settings.json" 2>/dev/null)
+LOCAL_SETTINGS=$(cat "$RUNTIME/settings.json" 2>/dev/null)
 
 # Start from LOCAL as the base
 MERGED="$LOCAL_SETTINGS"
@@ -502,11 +513,11 @@ fi
 echo "⏭️ settings.json: kept local custom fields (provider, model, theme, enabledModels, externalEditor, ...)"
 
 # Write the merged result
-echo "$MERGED" | python3 -c "import json,sys;print(json.dumps(json.loads(sys.stdin.read()),indent=2))" > "$HOME/pi/agent/settings.json"
+echo "$MERGED" | python3 -c "import json,sys;print(json.dumps(json.loads(sys.stdin.read()),indent=2))" > "$RUNTIME/settings.json"
 echo "✅ settings.json written to the runtime"
 
 # --- Verify enabledModels matches models.json providers ---
-MODELS_FILE="$HOME/pi/agent/models.json"
+MODELS_FILE="$RUNTIME/models.json"
 if [ -f "$MODELS_FILE" ]; then
   python3 -c "
 import json, sys
@@ -519,7 +530,7 @@ if bad:
     print('   Check enabledModels against models.json manually')
 else:
     print('✅ enabledModels matches models.json providers')
-  " "$MODELS_FILE" "$HOME/pi/agent/settings.json" 2>/dev/null
+  " "$MODELS_FILE" "$RUNTIME/settings.json" 2>/dev/null
 fi
 ```
 
@@ -547,10 +558,10 @@ After the selected modules and config merges are done, sync module files to the 
 ```bash
 # Module files only (extensions/, agents/, prompts/, skills/); config files are never
 # touched by this script, so the Step 4.5 merges stay intact.
-bash "$HOME/pi/bin/sync-pi.sh"
+bash "$SYNC"
 
 # Confirm no drift remains
-bash "$HOME/pi/bin/sync-pi.sh" --check
+bash "$SYNC" --check
 ```
 
 > ℹ️ `sync-pi.sh` runs `rsync --delete` on the module paths. Files that exist only in the
@@ -565,9 +576,9 @@ After the sync, run automated validation before asking the user to confirm.
 
 **Derive test paths from the merged module list:**
 - For each pi-setup path (with the `agent/` prefix), the runtime path replaces `agent/` with
-  `$HOME/pi/agent/`
-  - e.g. `agent/agents/foo.md` → `$HOME/pi/agent/agents/foo.md`
-- For agent-setup skills, the runtime path is `$HOME/pi/agent/skills/` + the path relative to
+  `$RUNTIME/`
+  - e.g. `agent/agents/foo.md` → `$RUNTIME/agents/foo.md`
+- For agent-setup skills, the runtime path is `$RUNTIME/skills/` + the path relative to
   agent-setup's `skills/` directory
 
 ### Test suite
@@ -576,15 +587,15 @@ After the sync, run automated validation before asking the user to confirm.
 
 ```bash
 echo "--- 1. git status ---"
-cd "$HOME/pi/repos/pi-setup" && git status --short 2>/dev/null
-cd "$HOME/pi/repos/agent-setup" && git status --short 2>/dev/null
+cd "$PI_SETUP" && git status --short 2>/dev/null
+cd "$AGENT_SETUP" && git status --short 2>/dev/null
 echo "These should match the Step 4 expectations."
 ```
 
 **Test 2 — deleted files are gone from the runtime:**
 
 ```bash
-cd "$HOME/pi/agent"
+cd "$RUNTIME"
 # LLM: replace the paths below with the actual {deleted_paths} from the merge
 for file in {deleted_path_1} {deleted_path_2}; do
   if [ -e "$file" ]; then
@@ -598,7 +609,7 @@ done
 **Test 3 — modified/new files integrity:**
 
 ```bash
-cd "$HOME/pi/agent"
+cd "$RUNTIME"
 # LLM: replace the paths below with the actual {modified_paths} from the merge
 for file in {modified_path_1} {modified_path_2}; do
   if [ ! -f "$file" ]; then
@@ -627,7 +638,7 @@ done
 
 ```bash
 echo "--- 4. configuration check ---"
-RT_SETTINGS="$HOME/pi/agent/settings.json"
+RT_SETTINGS="$RUNTIME/settings.json"
 if [ -f "$RT_SETTINGS" ]; then
   python3 -c "import json,sys;json.load(open(sys.argv[1]));print('✅ settings.json: valid JSON')" "$RT_SETTINGS" 2>&1
   PROVIDER=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('defaultProvider',''))" "$RT_SETTINGS" 2>/dev/null)
@@ -638,7 +649,7 @@ else
   echo "❌ settings.json missing"
 fi
 
-for f in "$HOME/pi/agent/auth.json" "$HOME/pi/agent/trust.json" "$HOME/pi/agent/pi-websearch.json"; do
+for f in "$RUNTIME/auth.json" "$RUNTIME/trust.json" "$RUNTIME/pi-websearch.json"; do
   [ -f "$f" ] && echo "✅ intact: $(basename "$f")" || echo "⚠️  missing: $f"
 done
 ```
@@ -646,9 +657,9 @@ done
 **Test 5 — skills count matches (when agent-setup has skills):**
 
 ```bash
-if [ -d "$HOME/pi/repos/agent-setup/skills" ]; then
-  AG_COUNT=$(find "$HOME/pi/repos/agent-setup/skills" -name "SKILL.md" 2>/dev/null | wc -l)
-  RT_COUNT=$(find "$HOME/pi/agent/skills" -name "SKILL.md" 2>/dev/null | wc -l)
+if [ -d "$AGENT_SETUP/skills" ]; then
+  AG_COUNT=$(find "$AGENT_SETUP/skills" -name "SKILL.md" 2>/dev/null | wc -l)
+  RT_COUNT=$(find "$RUNTIME/skills" -name "SKILL.md" 2>/dev/null | wc -l)
   if [ "$AG_COUNT" -eq "$RT_COUNT" ]; then
     echo "✅ skills count matches: $AG_COUNT"
   else
@@ -713,8 +724,8 @@ git push origin "$BRANCH" || { echo "❌ push failed; check network or permissio
 ## Step 8: Verify and report
 
 ```bash
-cd "$HOME/pi/repos/pi-setup" && echo "pi-setup: $(git rev-parse --short HEAD) (origin: $(git ls-remote origin $(git rev-parse --abbrev-ref HEAD) | cut -c1-7))"
-cd "$HOME/pi/repos/agent-setup" && echo "agent-setup: $(git rev-parse --short HEAD) (origin: $(git ls-remote origin $(git rev-parse --abbrev-ref HEAD) | cut -c1-7))"
+cd "$PI_SETUP" && echo "pi-setup: $(git rev-parse --short HEAD) (origin: $(git ls-remote origin $(git rev-parse --abbrev-ref HEAD) | cut -c1-7))"
+cd "$AGENT_SETUP" && echo "agent-setup: $(git rev-parse --short HEAD) (origin: $(git ls-remote origin $(git rev-parse --abbrev-ref HEAD) | cut -c1-7))"
 ```
 
 **Summary:**
@@ -755,13 +766,13 @@ echo "✅ rolled back to: $(git rev-parse --short HEAD)"
 **After the rollback, re-sync the runtime from the rolled-back repositories:**
 
 ```bash
-bash "$HOME/pi/bin/sync-pi.sh"
+bash "$SYNC"
 
 # Also restore the tracked config mirrors, since sync-pi.sh never touches config files.
 for name in settings.json pi-lsp.json pi-fff.json pi-auto-compact.json; do
-  src="$HOME/pi/repos/pi-setup/agent/$name"
+  src="$PI_SETUP/agent/$name"
   [ -f "$src" ] || continue
-  cp "$src" "$HOME/pi/agent/$name" && echo "✅ restored config: $name"
+  cp "$src" "$RUNTIME/$name" && echo "✅ restored config: $name"
 done
 echo "✅ runtime restored from the rolled-back repositories"
 ```
