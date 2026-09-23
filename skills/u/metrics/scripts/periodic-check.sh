@@ -8,6 +8,13 @@ DAYS="${1:-3}"
 AGENT_DIR="${PI_CODING_AGENT_DIR:-$HOME/pi/agent}"
 BASELINE="$AGENT_DIR/metrics-baseline.json"
 
+# Keep the vector index tidy: pi-memory re-chunks changed files after every write and orphans
+# the previous chunks, so an untouched index makes verify-pi.sh report "orphaned embedding
+# chunks". Fire and forget so this check stays fast and its output contract unchanged.
+if command -v qmd >/dev/null 2>&1; then
+  ( qmd cleanup >/dev/null 2>&1 & ) || true
+fi
+
 if [[ ! -f "$BASELINE" ]]; then
   echo "no-baseline"
   exit 0
