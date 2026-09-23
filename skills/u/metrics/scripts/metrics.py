@@ -6,8 +6,13 @@ Usage:
   metrics.py                 current report + delta (vs baseline) + recommendations
   metrics.py --save-baseline store the current numbers as the new baseline
 """
-import json, os, glob, re, argparse, sys
+import argparse
+import glob
+import json
+import os
+import re
 from collections import defaultdict
+
 
 def _sessions_root():
     c=[os.environ.get("PI_SESSIONS"),
@@ -50,7 +55,7 @@ def scan():
                     line=line.strip()
                     if not line: continue
                     try: o=json.loads(line)
-                    except: continue
+                    except (json.JSONDecodeError, ValueError): continue  # skip malformed session lines
                     ty=o.get("type")
                     if ty=="session":
                         per_proj[proj]["sess"]+=1; per_day[o.get("timestamp","")[:10]]["sess"]+=1
@@ -94,11 +99,12 @@ def compute_current():
             "capturedAt":__import__("datetime").datetime.now().isoformat(timespec="seconds")}
 
 def load_baseline():
-    try: return json.load(open(BASELINE,encoding="utf-8"))
-    except: return None
+    try:
+        with open(BASELINE,encoding="utf-8") as fh: return json.load(fh)
+    except (OSError, json.JSONDecodeError): return None
 
 def save_baseline(cur):
-    json.dump(cur,open(BASELINE,"w",encoding="utf-8"),ensure_ascii=False,indent=2)
+    with open(BASELINE,"w",encoding="utf-8") as fh: json.dump(cur,fh,ensure_ascii=False,indent=2)
     return BASELINE
 
 def build_recommendations(cur,base):
