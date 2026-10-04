@@ -1,0 +1,4 @@
+interface:
+  display_name: "ComfyUI Image Gen"
+  short_description: "Create or transform images through ComfyUI"
+  default_prompt: "Use $comfyui-imagegen to create or transform an image through local ComfyUI."

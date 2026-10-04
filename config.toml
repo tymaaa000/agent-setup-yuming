@@ -1,0 +1,47 @@
+[[skills]]
+name = "archify"
+repo = "https://github.com/tt-a1i/archify.git"
+path = "archify"
+frontmatter = {disable-model-invocation = true}
+
+[[skills]]
+name = "comfyui-imagegen"
+repo = "local"
+
+[[skills]]
+name = "domain-modeling"
+repo = "https://github.com/mattpocock/skills.git"
+path = "skills/engineering/domain-modeling"
+
+[[skills]]
+name = "grill-with-docs"
+repo = "https://github.com/mattpocock/skills.git"
+path = "skills/engineering/grill-with-docs"
+frontmatter = {disable-model-invocation = true}
+
+[[skills]]
+name = "grilling"
+repo = "https://github.com/mattpocock/skills.git"
+path = "skills/productivity/grilling"
+
+[[skills]]
+name = "math-modeling"
+repo = "https://github.com/XiaoMaColtAI/math-modeling-skill.git"
+frontmatter = {disable-model-invocation = true}
+
+[[skills]]
+name = "ppt-master"
+repo = "https://github.com/hugohe3/ppt-master.git"
+path = "skills/ppt-master"
+frontmatter = {disable-model-invocation = true}
+
+[[skills]]
+name = "simplify-codebase"
+repo = "https://github.com/tt-a1i/simplify-codebase.git"
+frontmatter = {disable-model-invocation = true}
+
+[[skills]]
+name = "skill-creator"
+repo = "https://github.com/openai/skills.git"
+path = "skills/.system/skill-creator"
+frontmatter = {disable-model-invocation = true}
