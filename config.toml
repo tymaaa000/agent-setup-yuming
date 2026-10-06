@@ -9,17 +9,6 @@ name = "comfyui-imagegen"
 repo = "local"
 
 [[skills]]
-name = "domain-modeling"
-repo = "https://github.com/mattpocock/skills.git"
-path = "skills/engineering/domain-modeling"
-
-[[skills]]
-name = "grill-with-docs"
-repo = "https://github.com/mattpocock/skills.git"
-path = "skills/engineering/grill-with-docs"
-frontmatter = {disable-model-invocation = true}
-
-[[skills]]
 name = "grilling"
 repo = "https://github.com/mattpocock/skills.git"
 path = "skills/productivity/grilling"
